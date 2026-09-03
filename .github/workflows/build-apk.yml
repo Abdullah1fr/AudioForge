@@ -1,0 +1,84 @@
+name: Build AudioForge APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download repository
+        uses: actions/checkout@v4
+
+      - name: Prepare project
+        shell: bash
+        run: |
+          set -e
+
+          echo "Extracting AudioForge project..."
+
+          mkdir -p extracted
+          unzip -q AudioForge_Stage1.zip -d extracted
+
+          echo "Searching for Android project..."
+
+          PROJECT_DIR=$(find extracted -type f -name "settings.gradle.kts" -print -quit | xargs -r dirname)
+
+          if [ -z "$PROJECT_DIR" ]; then
+            PROJECT_DIR=$(find extracted -type f -name "settings.gradle" -print -quit | xargs -r dirname)
+          fi
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERROR: Android Gradle project was not found."
+            exit 1
+          fi
+
+          echo "Project directory: $PROJECT_DIR"
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build Debug APK
+        shell: bash
+        run: |
+          set -e
+
+          cd "$PROJECT_DIR"
+
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+            ./gradlew assembleDebug --stacktrace
+          else
+            echo "ERROR: gradlew was not found."
+            echo "The project must include the Gradle wrapper."
+            exit 1
+          fi
+
+      - name: Find APK
+        shell: bash
+        run: |
+          echo "Searching for APK..."
+
+          find "$PROJECT_DIR" -type f -name "*.apk" -print
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: AudioForge-debug-apk
+          path: |
+            ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
